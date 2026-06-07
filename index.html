@@ -24,7 +24,7 @@
     .camp-btn.selected { opacity:1; box-shadow:0 0 10px currentColor; }
     #attack-btn { border-color:#ff6b6b; color:#ff6b6b; }
     #defense-btn { border-color:#6b9fff; color:#6b9fff; }
-    #room-id-display { font-size:20px; margin:10px; color:#ffaa00; }
+    #room-id-display { font-size:24px; margin:10px; color:#ffaa00; letter-spacing:5px; }
     #status { color:#aaa; margin-top:10px; }
     #game-ui {
       position:absolute; top:15px; left:15px; color:white;
@@ -71,7 +71,7 @@
     <div class="lobby-box">
       <button id="create-room-btn">🏠 创建房间</button>
       <span style="margin:0 10px;">或</span>
-      <input id="join-room-id" placeholder="输入房间号">
+      <input id="join-room-id" placeholder="输入房间号" maxlength="4" style="width:80px; text-transform:uppercase;">
       <button id="join-room-btn">🚪 加入房间</button>
     </div>
     <div id="room-id-display"></div>
@@ -79,7 +79,7 @@
       <button id="attack-btn" class="camp-btn selected">🔥 进攻方</button>
       <button id="defense-btn" class="camp-btn">🛡️ 防守方</button>
     </div>
-    <button id="start-game-btn" style="display:none;">⚔️ 开始游戏</button>
+    <button id="start-game-btn" style="display:none;">⚔️ 开始游戏 (单人即开)</button>
     <div id="status"></div>
   </div>
 
@@ -95,13 +95,19 @@
   <div id="sprint-hint">🏃 奔跑中无法射击</div>
   <div id="message"></div>
 
-  <!-- 引入依赖 -->
   <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
-  <!-- 国内网络不稳定可尝试替换为： https://cdn.bootcdn.net/ajax/libs/peerjs/1.5.1/peerjs.min.js -->
   <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
 
   <script>
+    // ---------- 简化房间号工具 ----------
+    function generateShortId() {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let result = '';
+      for (let i = 0; i < 4; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
+      return result;
+    }
+
     // ---------- 全局变量 ----------
     let peer, connections = [], myPlayerId, isHost = false, gameActive = false;
     let selectedCamp = 'attack', keys = {}, isSprinting = false;
@@ -131,7 +137,7 @@
     const roomIdDisplay = document.getElementById('room-id-display');
     const startGameBtn = document.getElementById('start-game-btn');
 
-    // 阵营选择
+    // 阵营按钮
     document.getElementById('attack-btn').onclick = () => { selectedCamp='attack'; updateCampBtns(); };
     document.getElementById('defense-btn').onclick = () => { selectedCamp='defense'; updateCampBtns(); };
     function updateCampBtns() {
@@ -155,7 +161,7 @@
     controls.addEventListener('lock', () => { if(gameActive) { crosshair.style.display='block'; ammoDisplay.style.display='block'; } });
     controls.addEventListener('unlock', () => { crosshair.style.display='none'; ammoDisplay.style.display='none'; shootSpread=moveSpread=0; isSprinting=false; sprintHint.style.display='none'; });
 
-    // 光照
+    // 光照与地面
     scene.add(new THREE.AmbientLight(0x404066));
     const dirLight = new THREE.DirectionalLight(0xffeedd,0.9);
     dirLight.position.set(20,30,10); dirLight.castShadow=true; scene.add(dirLight);
@@ -167,7 +173,7 @@
     }
     addBox(-5,-4,1.5,2,1.5,0x5a5a8a); addBox(4,-3,1.2,2.2,1.2,0x5a5a8a); addBox(0,0,2,2.5,2,0x6a6a9a);
 
-    // 安包范围指示器
+    // 安包范围圈
     const rangeRingGeo = new THREE.RingGeometry(1.8, 2.0, 64);
     const rangeRingMat = new THREE.MeshBasicMaterial({ color: 0xff3333, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
     const rangeRing = new THREE.Mesh(rangeRingGeo, rangeRingMat);
@@ -175,7 +181,7 @@
     rangeRing.position.set(0, 0.02, 0);
     scene.add(rangeRing);
 
-    // 炸弹模型组
+    // 炸弹模型
     const bombModel = new THREE.Group();
     const bombBody = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.3), new THREE.MeshStandardMaterial({color:0x4a4a4a, roughness:0.7}));
     bombBody.position.y = 0.15; bombModel.add(bombBody);
@@ -231,7 +237,6 @@
         m.position.set(b.x,b.y,b.z); m.userData={isBullet:true}; scene.add(m);
       });
     }
-
     function updateBombVisual(state) {
       if (state.bomb.planted) {
         bombModel.visible = true;
@@ -291,11 +296,7 @@
           }
           if(dist < 10 && Math.random() < 0.02) {
             const dir = new THREE.Vector3(dx, 0.5, dz).normalize();
-            gameState.bullets.push({
-              x: p.x, y: 1.2, z: p.z,
-              vx: dir.x * 22, vy: dir.y * 22, vz: dir.z * 22,
-              ownerId: id,
-            });
+            gameState.bullets.push({ x: p.x, y: 1.2, z: p.z, vx: dir.x*22, vy: dir.y*22, vz: dir.z*22, ownerId: id });
           }
         }
         p.x = Math.max(-12, Math.min(12, p.x));
@@ -359,51 +360,95 @@
 
     function showMessage(msg){ messageDiv.textContent=msg; messageDiv.style.display='block'; }
 
-    // 房间创建/加入
-    document.getElementById('create-room-btn').onclick=()=>{
-      peer=new Peer({ host: '0.peerjs.com', port: 443, secure: true, debug: 1,
+    // ---------- 创建/加入房间（短ID）----------
+    document.getElementById('create-room-btn').onclick = () => {
+      const shortId = generateShortId();
+      peer = new Peer(shortId, {
+        host: '0.peerjs.com', port: 443, secure: true, debug: 1,
         config: { iceServers: [ { urls: 'stun:stun.l.google.com:19302' } ] }
       });
-      peer.on('open',id=>{ roomIdDisplay.textContent=`房间号：${id}`; statusDiv.textContent='等待玩家加入...'; isHost=true; myPlayerId=id; startGameBtn.style.display='block'; });
-      peer.on('connection',conn=>{ connections.push(conn); let pid=conn.peer;
-        gameState.players[pid]={x:(Math.random()-0.5)*6,z:(Math.random()-0.5)*6,rotationY:0,hp:100,score:0,
-          camp:Object.values(gameState.players).filter(p=>p.camp==='attack').length<=Object.values(gameState.players).filter(p=>p.camp==='defense').length?'attack':'defense',alive:true};
-        conn.on('data',data=>handleHostMessage(conn,data)); conn.on('close',()=>{ delete gameState.players[pid]; connections=connections.filter(c=>c!==conn); checkRoundEnd(); });
-        broadcast({type:'playerJoined',playerId:pid,camp:gameState.players[pid].camp});
+      peer.on('open', (id) => {
+        roomIdDisplay.textContent = `房间号：${id}`;
+        statusDiv.textContent = '等待玩家加入...';
+        isHost = true;
+        myPlayerId = id;
+        startGameBtn.style.display = 'block';
+      });
+      peer.on('connection', (conn) => {
+        connections.push(conn);
+        const pid = conn.peer;
+        gameState.players[pid] = {
+          x: (Math.random()-0.5)*6, z: (Math.random()-0.5)*6, rotationY:0, hp:100, score:0,
+          camp: Object.values(gameState.players).filter(p=>p.camp==='attack').length <= Object.values(gameState.players).filter(p=>p.camp==='defense').length ? 'attack' : 'defense',
+          alive: true
+        };
+        conn.on('data', data => handleHostMessage(conn, data));
+        conn.on('close', () => {
+          delete gameState.players[pid];
+          connections = connections.filter(c => c !== conn);
+          checkRoundEnd();
+        });
+        broadcast({ type: 'playerJoined', playerId: pid, camp: gameState.players[pid].camp });
+      });
+      peer.on('error', (err) => {
+        statusDiv.textContent = '创建失败，请重试';
+        console.error(err);
       });
     };
 
-    document.getElementById('join-room-btn').onclick=()=>{
-      const hostId=document.getElementById('join-room-id').value.trim(); if(!hostId)return;
-      peer=new Peer({ host: '0.peerjs.com', port: 443, secure: true, debug: 1,
+    document.getElementById('join-room-btn').onclick = () => {
+      const shortId = document.getElementById('join-room-id').value.trim().toUpperCase();
+      if (!shortId) return;
+      peer = new Peer({
+        host: '0.peerjs.com', port: 443, secure: true, debug: 1,
         config: { iceServers: [ { urls: 'stun:stun.l.google.com:19302' } ] }
       });
-      peer.on('open',id=>{ const conn=peer.connect(hostId,{reliable:true}); conn.on('open',()=>{ connections.push(conn); myPlayerId=id; statusDiv.textContent='已加入房间，等待房主开始...'; conn.send({type:'join',camp:selectedCamp}); }); conn.on('data',data=>handleClientMessage(data)); conn.on('close',()=>statusDiv.textContent='连接断开'); });
+      peer.on('open', (id) => {
+        myPlayerId = id;
+        const conn = peer.connect(shortId, { reliable: true });
+        conn.on('open', () => {
+          connections.push(conn);
+          statusDiv.textContent = '已加入房间，等待房主开始...';
+          conn.send({ type: 'join', camp: selectedCamp });
+        });
+        conn.on('data', data => handleClientMessage(data));
+        conn.on('close', () => statusDiv.textContent = '连接断开');
+      });
+      peer.on('error', (err) => {
+        statusDiv.textContent = '加入失败，检查房间号是否正确';
+        console.error(err);
+      });
     };
 
-    startGameBtn.onclick=()=>{
-      if(!isHost||Object.keys(gameState.players).length===0)return;
-      let attCount=0, defCount=0;
-      for(let p of Object.values(gameState.players)){ p.camp==='attack'?attCount++:defCount++; }
-      if(selectedCamp==='attack' && attCount>=5) selectedCamp='defense';
-      else if(selectedCamp==='defense' && defCount>=5) selectedCamp='attack';
-      gameState.players[myPlayerId]={x:selectedCamp==='attack'?-3:3,z:0,rotationY:0,hp:100,score:0,camp:selectedCamp,alive:true};
-      fillBots();
-      broadcast({type:'gameStart',state:gameState});
-      gameActive=true; lobby.style.display='none'; gameUI.style.display='block'; ammo=30; isReloading=false; reloadTimer=0;
-      setTimeout(()=>controls.lock(),200);
+    // 开始游戏（单人即开）
+    startGameBtn.onclick = () => {
+      if (!isHost) return;
+      // 将自己加入玩家列表（如果还没加入）
+      if (!gameState.players[myPlayerId]) {
+        gameState.players[myPlayerId] = {
+          x: selectedCamp==='attack' ? -3 : 3, z: 0, rotationY:0, hp:100, score:0,
+          camp: selectedCamp, alive: true
+        };
+      }
+      fillBots(); // 补齐机器人
+      broadcast({ type: 'gameStart', state: gameState });
+      gameActive = true;
+      lobby.style.display = 'none';
+      gameUI.style.display = 'block';
+      ammo = 30; isReloading = false; reloadTimer = 0;
+      setTimeout(() => controls.lock(), 200);
     };
 
-    // 输入处理
+    // ---------- 输入处理 ----------
     window.onkeydown = e => {
       keys[e.key.toLowerCase()] = true;
       if (e.key === 'Shift') { isSprinting = true; e.preventDefault(); }
       if (e.key.toLowerCase() === 'r' && gameActive && controls.isLocked && !isReloading && ammo < maxAmmo) startReload();
-      if (e.key.toLowerCase() === 'e' && gameActive && controls.isLocked && !isSprinting && connections.length>0) {
+      if (e.key.toLowerCase() === 'e' && gameActive && controls.isLocked && !isSprinting) {
         const me = gameState.players[myPlayerId]; if (me && me.alive) {
           const action = me.camp === 'attack' ? 'plant' : 'defuse';
-          if (isHost) handleHostMessage({peer:myPlayerId}, {type:action});
-          else connections[0].send({type:action});
+          if (isHost) handleHostMessage({ peer: myPlayerId }, { type: action });
+          else if (connections.length > 0) connections[0].send({ type: action });
         }
       }
     };
@@ -428,31 +473,47 @@
       dir.normalize();
       const pos = camera.position.clone().add(dir.clone().multiplyScalar(0.8));
       const shootData = { type:'shoot', x:pos.x, y:pos.y, z:pos.z, vx:dir.x*25, vy:dir.y*25, vz:dir.z*25 };
-      if (isHost) handleHostMessage({peer:myPlayerId}, shootData);
-      else if (connections.length>0) connections[0].send(shootData);
+      if (isHost) handleHostMessage({ peer: myPlayerId }, shootData);
+      else if (connections.length > 0) connections[0].send(shootData);
       gunRecoil = 0.03;
     };
 
-    let lastMoveSend=0;
+    // 移动同步
+    let lastMoveSend = 0;
     function sendMovement() {
-      if(!gameActive||!controls.isLocked)return;
-      const now=performance.now(); if(now-lastMoveSend<50)return; lastMoveSend=now;
+      if (!gameActive || !controls.isLocked) return;
+      const now = performance.now(); if (now - lastMoveSend < 50) return; lastMoveSend = now;
       const speed = isSprinting ? 0.2 : 0.1;
-      let dx=0, dz=0;
-      if(keys['w'])dz-=speed; if(keys['s'])dz+=speed; if(keys['a'])dx-=speed; if(keys['d'])dx+=speed;
-      moveSpread = (dx!==0||dz!==0) ? (isSprinting ? sprintMoveSpread : normalMoveSpread) : moveSpread;
-      if (isHost) { const me=gameState.players[myPlayerId]; if(me&&me.alive){ me.x+=dx; me.z+=dz; me.x=Math.max(-12,Math.min(12,me.x)); me.z=Math.max(-12,Math.min(12,me.z)); me.rotationY=camera.rotation.y; } }
-      else if(connections.length>0) connections[0].send({type:'move',dx,dz,rotationY:camera.rotation.y});
+      let dx = 0, dz = 0;
+      if (keys['w']) dz -= speed;
+      if (keys['s']) dz += speed;
+      if (keys['a']) dx -= speed;
+      if (keys['d']) dx += speed;
+      moveSpread = (dx !== 0 || dz !== 0) ? (isSprinting ? sprintMoveSpread : normalMoveSpread) : moveSpread;
+      if (isHost) {
+        const me = gameState.players[myPlayerId];
+        if (me && me.alive) {
+          me.x += dx; me.z += dz;
+          me.x = Math.max(-12, Math.min(12, me.x));
+          me.z = Math.max(-12, Math.min(12, me.z));
+          me.rotationY = camera.rotation.y;
+        }
+      } else if (connections.length > 0) {
+        connections[0].send({ type: 'move', dx, dz, rotationY: camera.rotation.y });
+      }
     }
 
     // 动画循环
-    function animate(timestamp) {
+    function animate() {
       requestAnimationFrame(animate);
       sendMovement();
 
-      if(shootSpread>0){ shootSpread-=spreadDecaySpeed*0.016; if(shootSpread<0)shootSpread=0; }
-      if(!keys['w']&&!keys['a']&&!keys['s']&&!keys['d']){ if(moveSpread>0){ moveSpread-=spreadDecaySpeed*0.016; if(moveSpread<0)moveSpread=0; } }
-      else { moveSpread = isSprinting ? sprintMoveSpread : normalMoveSpread; }
+      if (shootSpread > 0) { shootSpread -= spreadDecaySpeed * 0.016; if (shootSpread < 0) shootSpread = 0; }
+      if (!keys['w'] && !keys['a'] && !keys['s'] && !keys['d']) {
+        if (moveSpread > 0) { moveSpread -= spreadDecaySpeed * 0.016; if (moveSpread < 0) moveSpread = 0; }
+      } else {
+        moveSpread = isSprinting ? sprintMoveSpread : normalMoveSpread;
+      }
 
       // 换弹动画
       if (isReloading) {
@@ -468,7 +529,7 @@
         } else if (reloadTimer < reloadTime) {
           const progress = (reloadTimer - 1.4) / 0.6;
           mag.position.y = -0.13 - 0.25 * (1 - progress);
-          gunGroup.position.z = gunDefaultPos.z - 0.02 * Math.sin((1-progress) * Math.PI);
+          gunGroup.position.z = gunDefaultPos.z - 0.02 * Math.sin((1 - progress) * Math.PI);
         }
         if (reloadTimer >= reloadTime) {
           mag.position.y = -0.13;
@@ -503,7 +564,7 @@
     requestAnimationFrame(animate);
 
     window.onresize = () => {
-      camera.aspect = innerWidth/innerHeight;
+      camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
     };
